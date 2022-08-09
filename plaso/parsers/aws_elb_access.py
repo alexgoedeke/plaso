@@ -22,7 +22,6 @@ from dfdatetime import time_elements as dfdatetime_time_elements
 from plaso.containers import events
 from plaso.containers import time_events
 from plaso.lib import definitions
-from plaso.lib import errors
 from plaso.parsers import manager
 from plaso.parsers import text_parser
 
@@ -327,10 +326,7 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
       object: value for the specified key.
     """
     structure_value = self._GetValueFromStructure(structure, name)
-    if structure_value != None:
-      return structure_value.get(key_name)
-    else:
-      return None
+    return structure_value.get(key_name)
 
   def _GetDateTime(self, parser_mediator, time_structure):
     """Returns a dfdatetime object from a timestamp.
@@ -440,7 +436,7 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     destination_list = self._GetValueFromStructure(
         structure, 'destination_list')
     if destination_list is not None:
-        event_data.destination_list = destination_list.split()
+      event_data.destination_list = destination_list.split()
     event_data.version = self._GetValueFromStructure(
         structure, 'version')
     event_data.listener = self._GetValueFromStructure(
@@ -475,11 +471,11 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     if key == 'elb_application_accesslog' and \
        date_time_request_received is not None:
 
-        elb_request_received_event = time_events.DateTimeValuesEvent(
-            date_time_request_received,
-            definitions.TIME_DESCRIPTION_AWS_ELB_REQUEST_RECEIVED)
-        parser_mediator.ProduceEventWithEventData(
-        elb_request_received_event, event_data)
+      elb_request_received_event = time_events.DateTimeValuesEvent(
+          date_time_request_received,
+          definitions.TIME_DESCRIPTION_AWS_ELB_REQUEST_RECEIVED)
+      parser_mediator.ProduceEventWithEventData(
+      elb_request_received_event, event_data)
 
   # pylint: disable=unused-argument
   def VerifyStructure(self, parser_mediator, line):

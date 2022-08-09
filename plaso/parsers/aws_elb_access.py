@@ -4,6 +4,9 @@
 This parser is based on the log format documented at
 https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html
 
+https://docs.aws.amazon.com/elasticloadbalancing/latest/classic/access-log-collection.html
+
+
 Note:
 The AWS documentation is not clear about the meaning of the "target_port_list"
 field. The assumption is that it refers to a list of possible backend instances'
@@ -117,12 +120,16 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
 
   BLANK = pyparsing.Literal('"-"')
 
-  _WORD = pyparsing.Word(pyparsing.printables) | BLANK
+  _WORD = pyparsing.Word(pyparsing.printables) | BLANK | pyparsing.Literal('-')
 
   _QUOTE_INTEGER = (
       pyparsing.OneOrMore('"') + text_parser.PyparsingConstants.INTEGER | BLANK)
 
-  _INTEGER = text_parser.PyparsingConstants.INTEGER | BLANK
+  _INTEGER = text_parser.PyparsingConstants.INTEGER | pyparsing.Literal('-')
+  _INTEGER_NEGATIVE = (
+    pyparsing.Word('-', pyparsing.nums) |
+    text_parser.PyparsingConstants.INTEGER |
+    pyparsing.Literal('-'))
 
   _FLOAT = pyparsing.Word(pyparsing.nums + '.')
 
@@ -147,7 +154,7 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
       pyparsing.Word(pyparsing.nums, exact=6) + pyparsing.Literal('Z'))
 
   # A log line is defined as in the AWS ELB documentation
-  _LOG_LINE = (
+  _LOG_LINE_APPLICATION = (
       _WORD.setResultsName('request_type') +
       _DATE_TIME_ISOFORMAT_STRING.setResultsName('time') +
       _WORD.setResultsName('resource_identifier') +
@@ -158,8 +165,8 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
       _FLOAT.setResultsName('response_processing_time') +
       _INTEGER.setResultsName('elb_status_code') +
       _INTEGER.setResultsName('destination_status_code') +
-      _INTEGER.setResultsName('received_bytes') +
-      _INTEGER.setResultsName('sent_bytes') +
+      _INTEGER_NEGATIVE.setResultsName('received_bytes') +
+      _INTEGER_NEGATIVE.setResultsName('sent_bytes') +
       pyparsing.quotedString.setResultsName('request')
           .setParseAction(pyparsing.removeQuotes) +
       pyparsing.quotedString.setResultsName('user_agent')
@@ -191,7 +198,30 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
           'classification_reason').setParseAction(pyparsing.removeQuotes)
   )
 
-  LINE_STRUCTURES = [('elb_accesslog', _LOG_LINE)]
+  _LOG_LINE_CLASSIC = (
+      _DATE_TIME_ISOFORMAT_STRING.setResultsName('time') +
+      _WORD.setResultsName('resource_identifier') +
+      _CLIENT_IP_ADDRESS_PORT.setResultsName('source_ip_port') +
+      _DESTINATION_IP_ADDRESS_PORT.setResultsName('destination_ip_port') +
+      _FLOAT.setResultsName('request_processing_time') +
+      _FLOAT.setResultsName('destination_processing_time') +
+      _FLOAT.setResultsName('response_processing_time') +
+      _INTEGER.setResultsName('elb_status_code') +
+      _INTEGER.setResultsName('destination_status_code') +
+      _INTEGER_NEGATIVE.setResultsName('received_bytes') +
+      _INTEGER_NEGATIVE.setResultsName('sent_bytes') +
+      pyparsing.quotedString.setResultsName('request')
+          .setParseAction(pyparsing.removeQuotes) +
+      pyparsing.quotedString.setResultsName('user_agent')
+          .setParseAction(pyparsing.removeQuotes) +
+      _WORD.setResultsName('ssl_cipher') +
+      _WORD.setResultsName('ssl_protocol')
+  )
+
+  LINE_STRUCTURES = [
+    ('elb_application_accesslog', _LOG_LINE_APPLICATION),
+    ('elb_classic_accesslog', _LOG_LINE_CLASSIC)
+  ]
 
   def _GetValueFromGroup(self, structure, name, key_name):
     """Retrieves a value from a Pyparsing.Group structure.
@@ -205,7 +235,10 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
       object: value for the specified key.
     """
     structure_value = self._GetValueFromStructure(structure, name)
-    return structure_value.get(key_name)
+    if structure_value != None:
+        return structure_value.get(key_name)
+    else:
+        return None
 
   def _GetDateTime(self, parser_mediator, time_structure):
     """Returns a dfdatetime object from a timestamp.
@@ -241,19 +274,18 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     Raises:
       ParseError: when the structure type is unsupported.
     """
-    if key != 'elb_accesslog':
-      raise errors.ParseError(
-          'Unable to parse record, unknown structure: {0:s}'.format(key))
 
     time_response_sent = structure.get('time')
     time_request_received = structure.get('request_creation_time')
 
     date_time_response_sent = self._GetDateTime(
         parser_mediator, time_response_sent)
-    date_time_request_received = self._GetDateTime(
-        parser_mediator, time_request_received)
 
-    if date_time_request_received is None or date_time_response_sent is None:
+    if time_request_received is not None:
+        date_time_request_received = self._GetDateTime(
+            parser_mediator, time_request_received)
+
+    if date_time_response_sent is None:
       return
 
     event_data = AWSELBEventData()
@@ -315,22 +347,23 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
         structure, 'classification_reason')
     destination_list = self._GetValueFromStructure(
         structure, 'destination_list')
-    event_data.destination_list = destination_list.split()
+    if destination_list is not None:
+        event_data.destination_list = destination_list.split()
 
     elb_response_sent_event = time_events.DateTimeValuesEvent(
         date_time_response_sent,
         definitions.TIME_DESCRIPTION_AWS_ELB_RESPONSE_SENT)
-
-    elb_request_received_event = time_events.DateTimeValuesEvent(
-        date_time_request_received,
-        definitions.TIME_DESCRIPTION_AWS_ELB_REQUEST_RECEIVED)
-
     parser_mediator.ProduceEventWithEventData(
         elb_response_sent_event, event_data)
 
-    parser_mediator.ProduceEventWithEventData(
+    if key == 'elb_application_accesslog' and date_time_request_received is not None:
+        elb_request_received_event = time_events.DateTimeValuesEvent(
+            date_time_request_received,
+            definitions.TIME_DESCRIPTION_AWS_ELB_REQUEST_RECEIVED)
+        parser_mediator.ProduceEventWithEventData(
         elb_request_received_event, event_data)
 
+  # pylint: disable=unused-argument
   def VerifyStructure(self, parser_mediator, line):
     """Verify that this file is a valid AWS ELB access log.
 
@@ -342,12 +375,7 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     Returns:
       bool: True if the line was successfully parsed.
     """
-    try:
-      structure = self._LOG_LINE.parseString(line)
-    except pyparsing.ParseException:
-      structure = None
-
-    return bool(structure)
+    return max([parser.matches(line) for _, parser in self.LINE_STRUCTURES])
 
 
 manager.ParsersManager.RegisterParser(AWSELBParser)

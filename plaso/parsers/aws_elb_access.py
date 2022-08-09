@@ -285,7 +285,8 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
       _WORD.setResultsName('alpn_fe_protocol') +
       _WORD.setResultsName('alpn_be_protocol') +
       (pyparsing.quotedString.setResultsName('alpn_client_preference_list')
-          .setParseAction(pyparsing.removeQuotes) | pyparsing.Literal('-')) | pyparsing.Literal('-')
+          .setParseAction(pyparsing.removeQuotes) | pyparsing.Literal('-')) |
+          pyparsing.Literal('-')
   )
 
   _LOG_LINE_CLASSIC = (
@@ -327,9 +328,9 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     """
     structure_value = self._GetValueFromStructure(structure, name)
     if structure_value != None:
-        return structure_value.get(key_name)
+      return structure_value.get(key_name)
     else:
-        return None
+      return None
 
   def _GetDateTime(self, parser_mediator, time_structure):
     """Returns a dfdatetime object from a timestamp.
@@ -373,8 +374,8 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
         parser_mediator, time_response_sent)
 
     if time_request_received is not None:
-        date_time_request_received = self._GetDateTime(
-            parser_mediator, time_request_received)
+      date_time_request_received = self._GetDateTime(
+          parser_mediator, time_request_received)
 
     if date_time_response_sent is None:
       return
@@ -471,7 +472,9 @@ class AWSELBParser(text_parser.PyparsingSingleLineTextParser):
     parser_mediator.ProduceEventWithEventData(
         elb_response_sent_event, event_data)
 
-    if key == 'elb_application_accesslog' and date_time_request_received is not None:
+    if key == 'elb_application_accesslog' and \
+       date_time_request_received is not None:
+
         elb_request_received_event = time_events.DateTimeValuesEvent(
             date_time_request_received,
             definitions.TIME_DESCRIPTION_AWS_ELB_REQUEST_RECEIVED)

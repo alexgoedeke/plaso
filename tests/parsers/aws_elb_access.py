@@ -32,6 +32,8 @@ class AWSELBUnitTest(test_lib.ParserTestCase):
     # we sort the events.
     events = list(storage_writer.GetSortedEvents())
 
+    # pylint: disable=line-too-long
+
     expected_event_values = {
         'actions_executed': 'waf,forward',
         'chosen_cert_arn': 'arn:aws:abc:us-east-2:234567891234:certificate',
@@ -149,7 +151,7 @@ class AWSELBUnitTest(test_lib.ParserTestCase):
     self.CheckEventValues(storage_writer, events[23], expected_event_values)
 
     expected_event_values = {
-        'version':'tls',
+        'request_type':'tls',
         'version':'2.0',
         'timestamp': '2022-04-01 08:51:42.000000',
         'resource_identifier': 'net/my-network-loadbalancer/c6e77e28c25b2234',
